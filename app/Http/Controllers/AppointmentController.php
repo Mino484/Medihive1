@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 
 // AppointmentController.php (simplified and fixed)
 namespace App\Http\Controllers;
-
+///
 use App\Models\Appointment;
 use App\Services\AppointmentService;
 use App\Models\TimeSlot;
