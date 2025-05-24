@@ -43,6 +43,7 @@ class Appointment extends Model
 'patient_id',
 'doctor_id',
 'clinic_id',
+'time_slot_id',
 'appointment_date',
 'reason',
 'status',
@@ -105,7 +106,10 @@ public function clinic(){
     return $this->belongsTo(Clinic::class);
 }
 
-
+public function timeSlot()
+{
+    return $this->belongsTo(TimeSlot::class);
+}
 
 
  // Helper methods

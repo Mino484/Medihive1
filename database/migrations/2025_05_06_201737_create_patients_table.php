@@ -20,6 +20,7 @@ return new class extends Migration
             $table->date('date_of_birth');
             $table->string('address');
             $table->string('phone_number');
+            $table->string('profile_picture')->nullable();
                $table->decimal('wallet_balance', 10, 2)->default(0);
     $table->string('wallet_pin', 60)->nullable(); // Hashed PIN
     $table->timestamp('wallet_activated_at')->nullable();

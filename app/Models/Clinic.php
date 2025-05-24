@@ -3,10 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\HandlesFiles;
 
 class Clinic extends Model
 {
-
+use HandlesFiles;
 
     protected $fillable =[
 'name',
@@ -28,5 +29,42 @@ class Clinic extends Model
 
     public function appointments(){
         return $this->hasMany(Appointment::class);
+
     }
+
+
+
+
+
+
+
+
+  public function getClinicImageUrl()
+    {
+        return $this->getFileUrl('description_picture', 'images/default-clinic.jpg');
+    }
+
+    // Upload clinic image
+    public function uploadClinicImage($file)
+    {
+        return $this->uploadFile($file, 'description_picture', 'clinic_images');
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
+

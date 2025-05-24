@@ -65,6 +65,7 @@ class User extends Authenticatable
         'last_name',
         'email',
         'phone',
+        'profile_picture',
         'role_id',
         'history',
         'password',
@@ -101,6 +102,10 @@ class User extends Authenticatable
         ];
     }
 
+public function hasRole(string $role): bool
+{
+    return optional($this->role)->name === $role;
+}
 
 public function role(){
 return $this->belongsTo(Role::class);

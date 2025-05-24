@@ -33,60 +33,114 @@ class PatientController extends Controller
         return response()->json($patient->load('user'));
     }
 
-    public function updateProfile(Request $request)
-    {
-        $user = Auth::user();
-        $patient = $user->patient;
+   public function updateProfile(Request $request)
+{
+    $user = Auth::user();
+    $patient = $user->patient;
 
-        $validator = Validator::make($request->all(), [
-            'first_name' => 'sometimes|string|max:255',
-            'last_name' => 'sometimes|string|max:255',
-            'phone_number' => 'sometimes|string|max:20',
-            'address' => 'sometimes|string|nullable',
-            'date_of_birth' => 'sometimes|date',
-            'gender' => 'sometimes|string|in:male,female,other',
-            'blood_type' => 'sometimes|string|nullable',
-            'emergency_contact' => 'sometimes|string|max:255',
-            'profile_picture' => 'sometimes|image|mimes:jpeg,png,jpg,gif|max:2048'
-        ]);
+    $validator = Validator::make($request->all(), [
+        'first_name' => 'sometimes|string|max:255',
+        'last_name' => 'sometimes|string|max:255',
+        'phone_number' => 'sometimes|string|max:20',
+        'address' => 'sometimes|string|nullable',
+        'date_of_birth' => 'sometimes|date',
+        'gender' => 'sometimes|string|in:male,female,other',
+        'blood_type' => 'sometimes|string|nullable',
+        'emergency_contact' => 'sometimes|string|max:255'
+        // Removed profile_picture from here
+    ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+    if ($validator->fails()) {
+        return response()->json(['errors' => $validator->errors()], 422);
+    }
+
+    // Update user
+    if ($request->has('first_name')) $user->first_name = $request->first_name;
+    if ($request->has('last_name')) $user->last_name = $request->last_name;
+    $user->save();
+
+    // Update patient
+    $patient->update($validator->validated());
+
+    return response()->json([
+        'patient' => $patient->fresh()->load('user'),
+        'message' => 'Profile updated successfully'
+    ]);
+}
+
+
+public function getProfilePicture()
+{
+    $patient = Auth::user()->patient;
+
+    if (!$patient) {
+        return response()->json(['message' => 'Patient not found'], 404);
+    }
+
+    if (!$patient->profile_picture) {
+        return response()->json(['message' => 'No profile picture set'], 404);
+    }
+
+    try {
+        // Extract just the filename from the URL
+        $filename = basename($patient->profile_picture);
+        $relativePath = 'profile_pictures/' . $filename;
+
+        if (!Storage::disk('public')->exists($relativePath)) {
+            return response()->json([
+                'message' => 'Profile picture file not found',
+                'debug' => [
+                    'database_value' => $patient->profile_picture,
+                    'storage_path' => $relativePath,
+                    'files_in_directory' => Storage::disk('public')->files('profile_pictures')
+                ]
+            ], 404);
         }
 
-
-
-
-//update the user
-
-
-        if ($request->has('first_name')) $user->first_name = $request->first_name;
-        if ($request->has('last_name')) $user->last_name = $request->last_name;
-        $user->save();
-
-
-
-
-        // Update patient data
-        $patientData = $validator->validated();
-        if ($request->hasFile('profile_picture')) {
-
-
-            // Delete old profile picture if exists
-            if ($patient->profile_picture) {
-                Storage::disk('public')->delete($patient->profile_picture);
-            }
-            $path = $request->file('profile_picture')->store('profile_pictures', 'public');
-            $patientData['profile_picture'] = $path;
-        }
-
-        $patient->update($patientData);
-
+        $fullPath = storage_path('app/public/' . $relativePath);
+        return response()->file($fullPath);
+    } catch (\Exception $e) {
         return response()->json([
-            'patient' => $patient->fresh()->load('user'),
-            'message' => 'Profile updated successfully'
+            'message' => 'Error retrieving profile picture',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+
+
+
+
+
+public function updateProfilePicture(Request $request)
+{
+    $request->validate([
+        'profile_picture' => 'required|image|mimes:jpg,jpeg,png|max:2048'
+    ]);
+
+    $patient = Auth::user()->patient;
+
+    if (!$patient) {
+        return response()->json(['message' => 'Patient profile not found'], 404);
+    }
+
+    if ($path = $patient->uploadProfilePicture($request->file('profile_picture'))) {
+        return response()->json([
+            'success' => true,
+            'url' => $patient->getProfilePictureUrl(),
+            'message' => 'Profile picture updated successfully'
         ]);
     }
+
+    return response()->json([
+        'error' => 'Invalid image file. Only JPG/JPEG/PNG files under 2MB are allowed'
+    ], 400);
+}
+
+
+
+
+
 
 
 
@@ -107,15 +161,34 @@ get payment history
 
 
 
+public function getClinics()
+{
+    $clinics = Clinic::select('id', 'name', 'location', 'opening_time', 'closing_time', 'description_picture')
+        ->withCount('doctors')
+        ->get()
+        ->map(function($clinic) {
+            $clinicData = $clinic->toArray();
+            $clinicData['image_url'] = $clinic->getClinicImageUrl();
+            return $clinicData;
+        });
 
-    public function getClinics()
-    {
-        $clinics = Clinic::select('id', 'name', 'location', 'opening_time', 'closing_time')
-            ->withCount('doctors')
-            ->get();
+    return response()->json($clinics);
+}
 
-        return response()->json($clinics);
-    }
+public function getClinicsWithSpecialties()
+{
+    return Clinic::with('doctors.user:id,first_name,last_name')
+        ->get(['id', 'name', 'location', 'description_picture'])
+        ->map(function($clinic) {
+            $clinicData = $clinic->toArray();
+            $clinicData['image_url'] = $clinic->getClinicImageUrl();
+            return $clinicData;
+        });
+}
+
+
+
+
 
     public function getClinicDoctors($clinicId)
     {
@@ -134,19 +207,9 @@ get payment history
 
 
 
-// Get clinics with specialties
-public function getClinicsWithSpecialties()
-{
-    return Clinic::with('doctors.user:id,first_name,last_name')
-        ->get(['id', 'name', 'location']);
-}
+
 
 // Get doctors with available slots for a clinic
-
-
-
-
-
 
 public function getClinicDoctorsWithSlots($clinicId, Request $request)
 {
@@ -193,10 +256,46 @@ public function getClinicDoctorsWithSlots($clinicId, Request $request)
 
 
 
+public function bookFromAvailableSlot(Request $request)
+{
+    $validated = $request->validate([
+        'slot_id' => 'required|exists:time_slots,id',
+        'reason' => 'nullable|string|max:500',
+        'notes' => 'nullable|string'
+    ]);
+
+    return DB::transaction(function () use ($validated) {
+        $slot = TimeSlot::findOrFail($validated['slot_id']);
+
+        // Check if slot is still available
+        if ($slot->is_booked) {
+            return response()->json(['message' => 'This time slot is no longer available'], 409);
+        }
+
+        // Mark slot as booked
+        $slot->update(['is_booked' => true]);
+
+        // Create appointment
+        $appointment = Appointment::create([
+            'patient_id' => Auth::user()->patient->id,
+            'doctor_id' => $slot->doctor_id,
+            'time_slot_id' => $slot->id,
+            'appointment_date' => $slot->date->format('Y-m-d') . ' ' . $slot->start_time,
+            'end_time' => $slot->end_time,
+            'reason' => $validated['reason'],
+            'notes' => $validated['notes'] ?? null,
+            'status' => 'confirmed'
+        ]);
+
+        return response()->json([
+            'appointment' => $appointment->load('doctor.user', 'clinic'),
+            'message' => 'Appointment booked successfully'
+        ], 201);
+    });
+}
 
 
-
-// Book appointment from available slot
+/* Book appointment from available slot 1st
 public function bookFromAvailableSlot(Request $request)
 {
     $validated = $request->validate([
@@ -226,7 +325,7 @@ public function bookFromAvailableSlot(Request $request)
     ]);
 }
 
-
+*/
 
 
 
@@ -284,192 +383,7 @@ public function bookFromAvailableSlot(Request $request)
 
 
 
-// Get available slots
-public function getAvailableSlots($doctorId, $date) {
-    $slots = TimeSlot::where('doctor_id', $doctorId)
-        ->where('date', $date)
-        ->where('is_booked', false)
-        ->get();
 
-    return response()->json($slots);
-}
-
-// Book appointment
-public function bookAppointment(Request $request) {
-    $validated = $request->validate([
-        'slot_id' => 'required|exists:time_slots,id',
-        'reason' => 'required|string|max:500'
-    ]);
-
-    DB::transaction(function () use ($validated) {
-        $slot = TimeSlot::find($validated['slot_id']);
-        $slot->update(['is_booked' => true]);
-
-        Appointment::create([
-            'patient_id' => Auth::id(),
-            'doctor_id' => $slot->doctor_id,
-            'appointment_date' => $slot->date,
-            'start_time' => $slot->start_time,
-            'end_time' => $slot->end_time,
-            'status' => 'confirmed',
-            'reason' => $validated['reason']
-        ]);
-    });
-
-    return response()->json(['message' => 'Appointment booked successfully']);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-    public function createAppointment(Request $request)
-    {
-        $validated = $request->validate([
-            'doctor_id' => 'required|exists:doctors,id',
-            'clinic_id' => 'required|exists:clinics,id',
-            'appointment_date' => 'required|date|after:now',
-            'reason' => 'required|string|max:500',
-            'notes' => 'sometimes|string|nullable'
-        ]);
-
-        try {
-            $appointmentDate = Carbon::parse($validated['appointment_date']);
-            $dayOfWeek = strtolower($appointmentDate->englishDayOfWeek);
-            $appointmentTime = $appointmentDate->format('H:i:s');
-            $dateOnly = $appointmentDate->format('Y-m-d');
-
-            // checking if the doctor exists at this clinic
-            $doctor = Doctor::with('schedules')
-                ->where('id', $validated['doctor_id'])
-                ->where('clinic_id', $validated['clinic_id'])
-                ->firstOrFail();
-
-            // Check if doctor has any schedules
-            if ($doctor->schedules->isEmpty()) {
-                return response()->json([
-                    'message' => 'This doctor has no availability scheduled. Please contact the clinic.'
-                ], 400);
-            }
-
-
-
-            $clinic = Clinic::findOrFail($validated['clinic_id']);
-            $clinicOpen = Carbon::parse($clinic->opening_time);
-            $clinicClose = Carbon::parse($clinic->closing_time);
-            $requestedTime = Carbon::parse($appointmentTime);
-
-            if ($requestedTime->lt($clinicOpen) || $requestedTime->gt($clinicClose)) {
-                return response()->json([
-                    'message' => 'Clinic is closed at this time. Open hours: ' .
-                                $clinic->opening_time . ' to ' . $clinic->closing_time
-                ], 400);
-            }
-
-
-
-
-
-            // Check specific day availability
-            $daySchedule = $doctor->schedules->firstWhere('day', $dayOfWeek);
-
-            if (!$daySchedule) {
-                $availableDays = $doctor->schedules->pluck('day')
-                    ->unique()
-                    ->map(fn($day) => ucfirst($day))
-                    ->implode(', ');
-
-                return response()->json([
-                    'message' => 'Doctor not available on ' . ucfirst($dayOfWeek) . '.',
-                    'available_days' => $availableDays ?: 'No days scheduled'
-                ], 400);
-            }
-
-            // Check time slot (single day ) availability
-            $scheduleStart = Carbon::parse($daySchedule->start_time);
-            $scheduleEnd = Carbon::parse($daySchedule->end_time);
-
-            if ($requestedTime->lt($scheduleStart) || $requestedTime->gt($scheduleEnd)) {
-                return response()->json([
-                    'message' => 'Doctor availability on ' . ucfirst($dayOfWeek) . ': ' .
-                                $daySchedule->start_time . ' to ' . $daySchedule->end_time
-                ], 400);
-            }
-
-            // existing appointments has  limit to 3 per day
-            $existingAppointmentsCount = Appointment::where('doctor_id', $doctor->id)
-                ->whereDate('appointment_date', $dateOnly)
-                ->count();
-
-
-
-
-            if ($existingAppointmentsCount >= 3) {
-                return response()->json([
-                    'message' => 'Doctor has reached maximum appointments for this day (3 appointments max)'
-                ], 409);
-            }
-
-
-
-
-            // Check for specific time slot conflicts (within 30 minutes)
-            $conflictingAppointment = Appointment::where('doctor_id', $doctor->id)
-                ->whereBetween('appointment_date', [
-                    $appointmentDate->copy()->subMinutes(30),
-                    $appointmentDate->copy()->addMinutes(30)
-                ])
-                ->exists();
-
-            if ($conflictingAppointment) {
-                return response()->json([
-                    'message' => 'Time slot already booked or too close to another appointment'
-                ], 409);
-            }
-
-
-
-
-            $patient = Auth::user()->patient;
-
-            if (!$patient) {
-                return response()->json([
-                    'message' => 'Patient profile not found'
-                ], 404);
-            }
-
-            // Create the appointment
-            $appointmentData = [
-                'patient_id' => $patient->id,
-                'doctor_id' => $validated['doctor_id'],
-                'clinic_id' => $validated['clinic_id'],
-                'appointment_date' => $validated['appointment_date'],
-                'reason' => $validated['reason'],
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'pending'
-            ];
-
-            $appointment = Appointment::create($appointmentData);
-
-            return response()->json([
-                'appointment' => $appointment,
-                'message' => 'Appointment booked successfully'
-            ], 201);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Appointment booking failed',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 
 
 

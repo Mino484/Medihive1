@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HandlesFiles;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
@@ -34,9 +35,12 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Doctor extends Model
 {
+    use HandlesFiles;
     protected $fillable =[
  'user_id',
  'clinic_id',
+         'profile_picture',
+
  'specialty',
  'workdays'
     ];
@@ -83,11 +87,7 @@ public function timeSlots()
 }
 
 
-  // Helper methods
-  public function isAvailable($date, $time)
-  {
-      return $this->workdays[$date] ?? false;
-  }
+
 
   public function getAvailableServices()
   {
@@ -96,51 +96,20 @@ public function timeSlots()
 
 
 
-// In App\Models\Doctor.php
 
-public function getAvailableSlots($date)
+
+
+public function availableTimeSlots($date)
 {
-    $dayOfWeek = strtolower(Carbon::parse($date)->englishDayOfWeek);
-
-    // Check if doctor works this day
-    $schedule = $this->schedules()->where('day', $dayOfWeek)->first();
-    if (!$schedule) {
-        return collect();
-    }
-
-    // Generate fixed slots (e.g., 5 per day)
-    $slots = [];
-    $start = Carbon::parse($schedule->start_time);
-    $end = Carbon::parse($schedule->end_time);
-    $interval = $start->diffInMinutes($end) / 5; // 5 slots per day
-
-    for ($i = 0; $i < 5; $i++) {
-        $slotStart = $start->copy()->addMinutes($i * $interval);
-        $slotEnd = $slotStart->copy()->addMinutes($interval);
-
-        // Check if slot is already booked
-        $isBooked = Appointment::where('doctor_id', $this->id)
-            ->whereDate('appointment_date', $date)
-            ->whereTime('appointment_date', '>=', $slotStart->format('H:i:s'))
-            ->whereTime('appointment_date', '<', $slotEnd->format('H:i:s'))
-            ->exists();
-
-        if (!$isBooked) {
-            $slots[] = [
-                'start_time' => $slotStart->format('g:i A'),
-                'end_time' => $slotEnd->format('g:i A')
-            ];
-        }
-    }
-
-    return collect($slots);
+    return $this->timeSlots()
+        ->where('date', $date)
+        ->where('is_booked', false)
+        ->orderBy('start_time')
+        ->get();
 }
 
 
-  public function schedules()
-  {
-      return $this->hasMany(DoctorSchedule::class);
-  }
+
 
 
 }

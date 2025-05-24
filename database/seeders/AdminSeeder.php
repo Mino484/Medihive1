@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\{Appointment, Clinic, DoctorSchedule, User, Doctor, Patient, Role, Secretary, TimeSlot};
+use App\Models\{Appointment, Clinic, DoctorSchedule, User, Doctor, Patient, Role, Secretary, Specialty, TimeSlot};
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Carbon\Carbon;
@@ -26,6 +26,18 @@ class AdminSeeder extends Seeder
             'opening_time' => '09:00',
             'closing_time' => '19:00'
         ]);
+
+
+
+            \App\Models\Service::create([
+        'name' => 'General Consultation',
+        'price' => 50.00,
+    ]);
+
+    \App\Models\Service::create([
+        'name' => 'Specialist Consultation',
+        'price' => 100.00,
+    ]);
 
         // Create patient
         $patientUser = User::create([
@@ -168,5 +180,10 @@ class AdminSeeder extends Seeder
             'price' => 100.00,
             'fee' => 80.00 // Don't forget the fee field
         ]);
+
+
+            Specialty::create(['name' => 'Ophthalmology', 'description' => 'Eye care specialists']);
+    Specialty::create(['name' => 'Dermatology', 'description' => 'Skin care specialists']);
+    Specialty::create(['name' => 'Oncology', 'description' => 'Cancer treatment specialists']);
     }
 }
